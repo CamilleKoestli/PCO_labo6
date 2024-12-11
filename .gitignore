@@ -1,0 +1,17 @@
+# Ignorer la consigne du laboratoire
+labo6_threadpool.pdf
+
+# Ignorer les dossiers de construction
+code/build/
+code/cmake-build-debug/
+
+# Ignorer les fichiers de configuration IDE
+code/.idea/
+
+
+.idea
+.vscode
+build
+cmake-build-debug
+
+code/.cache
