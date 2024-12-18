@@ -16,3 +16,4 @@ cmake-build-debug
 
 code/.cache
 CMakeLists.txt.user
+build-code-Desktop-Debug/*
