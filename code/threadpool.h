@@ -10,8 +10,6 @@
 #include <pcosynchro/pcologger.h>
 #include <pcosynchro/pcothread.h>
 #include <pcosynchro/pcohoaremonitor.h>
-#include <pcosynchro/pcomutex.h>
-#include <pcosynchro/pcoconditionvariable.h>
 
 class Runnable {
 public:
