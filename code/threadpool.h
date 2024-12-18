@@ -49,9 +49,7 @@ public:
         : taskQueue(taskQueue),  activeCount(activeCount), thread(&Worker::run, this) {}
 
     ~Worker() {
-        if (thread.joinable()) {
-            thread.join();
-        }
+        thread.join();
     }
 
 private:
@@ -61,7 +59,7 @@ private:
 
     TaskQueue& taskQueue;
     std::atomic<size_t>& activeCount;
-    std::thread thread;
+    PcoThread thread;
 };
 
 
