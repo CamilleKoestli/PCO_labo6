@@ -21,22 +21,55 @@ public:
 
 
 // sous-classe qui encapsule la file d'attente des tâches
-class TaskQueue {
+class TaskQueue : public PcoHoareMonitor {
 public:
-    TaskQueue(size_t maxSize) : maxSize(maxSize) {}
+    TaskQueue(size_t maxSize) : maxSize(maxSize), nbWaiting(0), waitingSem(0) {}
 
     bool push(std::unique_ptr<Runnable> task) {
+         monitorIn();
         if (queue.size() >= maxSize) {
+            monitorOut();
             return false; // File d'attente pleine.
         }
         queue.push(std::move(task));
+        if (nbWaiting > 0) {
+            waitingSem.release();
+        }
+        monitorOut();
         return true;
+    }
+
+    std::unique_ptr<Runnable> pop(std::chrono::milliseconds timeout) {
+        auto start = std::chrono::steady_clock::now();
+        monitorIn();
+        while (queue.empty()) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
+
+            if (elapsed >= timeout) {
+                monitorOut();
+                return nullptr; // Temps d'attente dépassé.
+            }
+
+            nbWaiting++;
+            monitorOut();
+            waitingSem.acquire();
+            monitorIn();
+            nbWaiting--;
+        }
+
+        auto task = std::move(queue.front());
+        queue.pop();
+        monitorOut();
+        return task;
     }
 
 
 private:
     std::queue<std::unique_ptr<Runnable>> queue;
     size_t maxSize;
+    int nbWaiting;
+    PcoSemaphore waitingSem;
 };
 
 
