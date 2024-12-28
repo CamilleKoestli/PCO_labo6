@@ -19,94 +19,122 @@ public:
     virtual std::string id() = 0;
 };
 
+class ThreadPool : public PcoHoareMonitor {
+private:
+    size_t maxThreadCount;
+    size_t maxNbWaiting;
+    std::chrono::milliseconds idleTimeout;
 
-// sous-classe qui encapsule la file d'attente des tâches
-class TaskQueue : public PcoHoareMonitor {
-public:
-    TaskQueue(size_t maxSize) : maxSize(maxSize), nbWaiting(0), waitingSem(0) {}
 
-    bool push(std::unique_ptr<Runnable> task) {
-         monitorIn();
-        if (queue.size() >= maxSize) {
-            monitorOut();
-            return false; // File d'attente pleine.
+
+    PcoThread ThreadPoolMaster;
+
+    struct Worker {
+        std::unique_ptr<PcoThread> thread;
+        bool isWorking;
+        std::chrono::milliseconds previousTaskEnd;
+    };
+
+
+    bool stop_requested;
+    bool removingTimedOutThread;
+
+    std::atomic<size_t> activeThreads;
+
+    std::vector<Worker> workers; //TODO: maybe replace with map not sure
+
+    std::queue<std::unique_ptr<Runnable>> taskQueue;
+
+
+    Condition removal_finished;
+    Condition waiting_task;
+
+
+
+    void master_work() {
+        while (!PcoThread::thisThread()->stopRequested()) {
+
+            //TODO: how to tell specific thread to stop
+            //TODO: find way to calculat time for each
         }
-        queue.push(std::move(task));
-        if (nbWaiting > 0) {
-            waitingSem.release();
-        }
-        monitorOut();
-        return true;
     }
 
-    std::unique_ptr<Runnable> pop(std::chrono::milliseconds timeout) {
-        auto start = std::chrono::steady_clock::now();
-        monitorIn();
-        while (queue.empty()) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
 
-            if (elapsed >= timeout) {
+
+    void thread_work() {
+        while (!PcoThread::thisThread()->stopRequested()) {
+
+            monitorIn();
+
+            wait(waiting_task);
+
+            //TODO: set isworking to true somehow
+
+            if (PcoThread::thisThread()->stopRequested()) {
                 monitorOut();
-                return nullptr; // Temps d'attente dépassé.
+                return;
             }
 
-            nbWaiting++;
-            monitorOut();
-            waitingSem.acquire();
-            monitorIn();
-            nbWaiting--;
-        }
+            //TODO: finish handling
 
-        auto task = std::move(queue.front());
-        queue.pop();
-        monitorOut();
-        return task;
-    }
-
-
-private:
-    std::queue<std::unique_ptr<Runnable>> queue;
-    size_t maxSize;
-    int nbWaiting;
-    PcoSemaphore waitingSem;
-};
-
-
-// sous-classe qui gère un thread individuel du pool
-class Worker {
-public:
-    Worker(TaskQueue& taskQueue, std::atomic<size_t>& activeCount)
-        : taskQueue(taskQueue),  activeCount(activeCount), thread(&Worker::run, this) {}
-
-    ~Worker() {
-        thread.join();
-    }
-
-private:
-    void run() {
-       
-    }
-
-    TaskQueue& taskQueue;
-    std::atomic<size_t>& activeCount;
-    PcoThread thread;
-};
-
-
-class ThreadPool {
-public:
-    ThreadPool(int maxThreadCount, int maxNbWaiting, std::chrono::milliseconds idleTimeout)
-        : maxThreadCount(maxThreadCount), maxNbWaiting(maxNbWaiting), idleTimeout(idleTimeout),taskQueue(maxNbWaiting), activeThreads(0) {
-            for (int i = 0; i < maxThreadCount; ++i) {
-            workers.emplace_back(std::make_unique<Worker>(taskQueue, activeThreads));
         }
     }
+
+
+public:
+    ThreadPool(int maxThreadCount, int maxNbWaiting, std::chrono::milliseconds idleTimeout) :
+        maxThreadCount(maxThreadCount),
+        maxNbWaiting(maxNbWaiting),
+        idleTimeout(idleTimeout),
+        ThreadPoolMaster(&ThreadPool::master_work, this),
+        stop_requested(false),
+        removingTimedOutThread(false),
+        activeThreads(0) {
+
+        //TODO:Verif if usefull
+        if (maxThreadCount < 1) {
+            throw std::invalid_argument("Can't have less than 1 thread.");
+        }
+        if (maxNbWaiting < 1) {
+            throw std::invalid_argument("Can't have less than 1 task in queue.");
+        }
+        if (idleTimeout < (std::chrono::milliseconds)1) {
+            throw std::invalid_argument("Can't have less than 1ms timeout.");
+        }
+    }
+
 
     ~ThreadPool() {
         // TODO : End smoothly
-        
+
+
+        //TODO: add missing things in destructor
+        monitorIn();
+
+
+        stop_requested = true;
+
+
+        while (removingTimedOutThread) {
+            wait(removal_finished);
+        }
+
+
+        ThreadPoolMaster.requestStop();
+
+        while (!taskQueue.empty()) {
+            taskQueue.front()->cancelRun();
+            taskQueue.pop();
+        }
+
+        monitorOut();
+
+        //TODO: opti maybe
+        for (auto &worker : workers) {
+            worker.thread->join();
+        }
     }
+
 
     /*
      * Start a runnable. If a thread in the pool is available, assign the
@@ -117,26 +145,38 @@ public:
      * If the runnable has been started, returns true, and else (the last case), return false.
      */
     bool start(std::unique_ptr<Runnable> runnable) {
-        // TODO
-        return taskQueue.push(std::move(runnable));
+
+
+        // TODO: verifiy if implementation is GorN
+
+        monitorIn();
+
+        if (taskQueue.size() >= maxNbWaiting) {
+            runnable->cancelRun();
+            monitorOut();
+            return false;
+        }
+
+        if (activeThreads < maxThreadCount) {
+            workers.emplace_back(Worker{ std::make_unique<PcoThread>(&ThreadPool::thread_work,this), false,  (std::chrono::milliseconds)0 });
+            activeThreads++;
+        }
+
+        taskQueue.push(std::move(runnable));
+        signal(waiting_task);
+
+        monitorOut();
+
+        return true;
     }
+
 
     /* Returns the number of currently running threads. They do not need to be executing a task,
      * just to be alive.
      */
     size_t currentNbThreads() {
-        // TODO
+        return activeThreads;
     }
-
-private:
-
-    size_t maxThreadCount;
-    size_t maxNbWaiting;
-    std::chrono::milliseconds idleTimeout;
-
-    TaskQueue taskQueue;
-    std::atomic<size_t> activeThreads;
-    std::vector<std::unique_ptr<Worker>> workers;
 };
 
 #endif // THREADPOOL_H
