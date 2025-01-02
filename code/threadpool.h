@@ -109,7 +109,6 @@ private:
         while (true) {
             auto task = taskQueue.pop(std::chrono::milliseconds(100));
             if (shouldStop && !task) {
-                // Si shouldStop est vrai et aucune tâche n'est récupérée, sortir
                 break;
             }
             if (task) {
@@ -145,13 +144,12 @@ public:
     ~ThreadPool() {
         stop = true;// Signaler aux threads de s'arrêter
 
-        // Relâcher les sémaphores pour réveiller tous les threads bloqués
         for (size_t i = 0; i < workers.size(); ++i) {
-            taskQueue.notifyAll();// Ajoutez une méthode notifyAll dans TaskQueue
+            taskQueue.notifyAll();
         }
 
-        taskQueue.cancelAll();// Annuler toutes les tâches non commencées
-        workers.clear();      // Attendre que tous les threads terminent proprement
+        taskQueue.cancelAll();
+        workers.clear();
         logger() << "ThreadPool: Pool de threads détruit.\n";
     }
 
@@ -180,7 +178,7 @@ public:
      */
     size_t currentNbThreads() {
         // TODO
-        return workers.size(); // Retourner le nombre total de threads dans le pool
+        return workers.size();
     }
 
 private:
