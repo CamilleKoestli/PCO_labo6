@@ -2,14 +2,14 @@
 #define THREADPOOL_H
 
 #include <atomic>
-#include <iostream>
-#include <stack>
-#include <vector>
-#include <chrono>
 #include <cassert>
+#include <chrono>
+#include <iostream>
+#include <pcosynchro/pcohoaremonitor.h>
 #include <pcosynchro/pcologger.h>
 #include <pcosynchro/pcothread.h>
-#include <pcosynchro/pcohoaremonitor.h>
+#include <stack>
+#include <vector>
 
 class Runnable {
 public:
@@ -26,11 +26,11 @@ public:
     TaskQueue(size_t maxSize) : maxSize(maxSize), nbWaiting(0), waitingSem(0) {}
 
     bool push(std::unique_ptr<Runnable> task) {
-         monitorIn();
+        monitorIn();
         if (queue.size() >= maxSize) {
             logger() << "TaskQueue: File d'attente pleine\n";
             monitorOut();
-            return false; // File d'attente pleine
+            return false;// File d'attente pleine
         }
         queue.push(std::move(task));
         logger() << "TaskQueue: Tâche push taille actuelle : " << queue.size() << "\n";
@@ -51,8 +51,7 @@ public:
             if (elapsed >= timeout) {
                 logger() << "TaskQueue: Timeout atteint sans tâche\n";
                 monitorOut();
-                monitorOut();
-                return nullptr; // Temps d'attente dépassé
+                return nullptr;// Temps d'attente dépassé
             }
 
             nbWaiting++;
@@ -76,26 +75,29 @@ public:
         while (!queue.empty()) {
             auto task = std::move(queue.front());
             queue.pop();
-            task->cancelRun(); 
+            task->cancelRun();
             logger() << "TaskQueue: Tâche annulée : " << task->id() << "\n";
         }
         monitorOut();
     }
 
+    void notifyAll() {
+        waitingSem.release();// Réveiller un thread en attente
+    }
 
 
 private:
-    std::queue<std::unique_ptr<Runnable>> queue; // File d'attente tâches
-    size_t maxSize;                              // Taille maximum de la file
-    int nbWaiting;                               // Nombre de threads en attente
-    PcoSemaphore waitingSem;                     // Sémaphore pour gérer l'attente
+    std::queue<std::unique_ptr<Runnable>> queue;// File d'attente tâches
+    size_t maxSize;                             // Taille maximum de la file
+    int nbWaiting;                              // Nombre de threads en attente
+    PcoSemaphore waitingSem;                    // Sémaphore pour gérer l'attente
 };
 
 
 // Sous-classe qui gère un thread individuel du pool
 class Worker {
 public:
-    Worker(TaskQueue& taskQueue, std::atomic<size_t>& activeCount, std::atomic<bool>& stopFlag)
+    Worker(TaskQueue &taskQueue, std::atomic<size_t> &activeCount, std::atomic<bool> &stopFlag)
         : taskQueue(taskQueue), activeCount(activeCount), shouldStop(stopFlag), thread(&Worker::run, this) {}
 
     ~Worker() {
@@ -104,23 +106,28 @@ public:
 
 private:
     void run() {
-       while (!shouldStop) {
+        while (true) {
             auto task = taskQueue.pop(std::chrono::milliseconds(100));
+            if (shouldStop && !task) {
+                // Si shouldStop est vrai et aucune tâche n'est récupérée, sortir
+                break;
+            }
             if (task) {
                 ++activeCount;
-                logger() << "Worker: Exécute tâche : " << task->id() << "\n";
+                logger() << "Worker: Exécution de la tâche : " << task->id() << "\n";
                 task->run();
                 logger() << "Worker: Tâche terminée : " << task->id() << "\n";
                 --activeCount;
             }
         }
-        logger() << "Worker: Thread arrêté\n";
+        logger() << "Worker: Thread arrêté proprement.\n";
     }
 
-    TaskQueue& taskQueue;                // File d'attente tâches
-    std::atomic<size_t>& activeCount;    // Compteur de tâches en cours
-    std::atomic<bool>& shouldStop;       // Indicateur stop
-    PcoThread thread;                    // Thread
+
+    TaskQueue &taskQueue;            // File d'attente tâches
+    std::atomic<size_t> &activeCount;// Compteur de tâches en cours
+    std::atomic<bool> &shouldStop;   // Indicateur stop
+    PcoThread thread;                // Thread
 };
 
 
@@ -136,12 +143,18 @@ public:
     }
 
     ~ThreadPool() {
-        // TODO : End smoothly
-        stop = true;
-        taskQueue.cancelAll();
-        workers.clear();
-        logger() << "ThreadPool: Pool threads détruit\n";
+        stop = true;// Signaler aux threads de s'arrêter
+
+        // Relâcher les sémaphores pour réveiller tous les threads bloqués
+        for (size_t i = 0; i < workers.size(); ++i) {
+            taskQueue.notifyAll();// Ajoutez une méthode notifyAll dans TaskQueue
+        }
+
+        taskQueue.cancelAll();// Annuler toutes les tâches non commencées
+        workers.clear();      // Attendre que tous les threads terminent proprement
+        logger() << "ThreadPool: Pool de threads détruit.\n";
     }
+
 
     /*
      * Start a runnable. If a thread in the pool is available, assign the
@@ -167,18 +180,18 @@ public:
      */
     size_t currentNbThreads() {
         // TODO
-        return activeThreads;
+        return workers.size(); // Retourner le nombre total de threads dans le pool
     }
 
 private:
-    size_t maxThreadCount;                        // Nombre maximum de threads
-    size_t maxNbWaiting;                          // Nombre maximum de tâches en attente
-    std::chrono::milliseconds idleTimeout;        // Temps d'inactivité avant arrêt
+    size_t maxThreadCount;                // Nombre maximum de threads
+    size_t maxNbWaiting;                  // Nombre maximum de tâches en attente
+    std::chrono::milliseconds idleTimeout;// Temps d'inactivité avant arrêt
 
-    TaskQueue taskQueue;                          // File d'attente des tâches
-    std::atomic<size_t> activeThreads;            // Nombre de tâches en cours
-    std::atomic<bool> stop;                       // Indicateur d'arrêt
-    std::vector<std::unique_ptr<Worker>> workers; // Liste des threads pool
+    TaskQueue taskQueue;                         // File d'attente des tâches
+    std::atomic<size_t> activeThreads;           // Nombre de tâches en cours
+    std::atomic<bool> stop;                      // Indicateur d'arrêt
+    std::vector<std::unique_ptr<Worker>> workers;// Liste des threads pool
 };
 
-#endif // THREADPOOL_H
+#endif// THREADPOOL_H
