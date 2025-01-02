@@ -64,6 +64,18 @@ public:
         return task;
     }
 
+    // Annuler toutes les tâches pas commencées
+    void cancelAll() {
+        monitorIn();
+        while (!queue.empty()) {
+            auto task = std::move(queue.front());
+            queue.pop();
+            task->cancelRun(); 
+        }
+        monitorOut();
+    }
+
+
 
 private:
     std::queue<std::unique_ptr<Runnable>> queue;
