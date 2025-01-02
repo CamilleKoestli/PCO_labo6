@@ -28,10 +28,12 @@ public:
     bool push(std::unique_ptr<Runnable> task) {
          monitorIn();
         if (queue.size() >= maxSize) {
+            logger() << "TaskQueue: File d'attente pleine\n";
             monitorOut();
             return false; // File d'attente pleine
         }
         queue.push(std::move(task));
+        logger() << "TaskQueue: Tâche push taille actuelle : " << queue.size() << "\n";
         if (nbWaiting > 0) {
             waitingSem.release();
         }
@@ -47,11 +49,14 @@ public:
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
 
             if (elapsed >= timeout) {
+                logger() << "TaskQueue: Timeout atteint sans tâche\n";
+                monitorOut();
                 monitorOut();
                 return nullptr; // Temps d'attente dépassé
             }
 
             nbWaiting++;
+            logger() << "TaskQueue: File vide thread attend\n";
             monitorOut();
             waitingSem.acquire();
             monitorIn();
@@ -60,6 +65,7 @@ public:
 
         auto task = std::move(queue.front());
         queue.pop();
+        logger() << "TaskQueue: Tâche pop taille restante : " << queue.size() << "\n";
         monitorOut();
         return task;
     }
@@ -71,6 +77,7 @@ public:
             auto task = std::move(queue.front());
             queue.pop();
             task->cancelRun(); 
+            logger() << "TaskQueue: Tâche annulée : " << task->id() << "\n";
         }
         monitorOut();
     }
@@ -101,10 +108,13 @@ private:
             auto task = taskQueue.pop(std::chrono::milliseconds(100));
             if (task) {
                 ++activeCount;
+                logger() << "Worker: Exécute tâche : " << task->id() << "\n";
                 task->run();
+                logger() << "Worker: Tâche terminée : " << task->id() << "\n";
                 --activeCount;
             }
         }
+        logger() << "Worker: Thread arrêté\n";
     }
 
     TaskQueue& taskQueue;                // File d'attente tâches
@@ -121,6 +131,7 @@ public:
           taskQueue(maxNbWaiting), activeThreads(0), stop(false) {
         for (int i = 0; i < maxThreadCount; ++i) {
             workers.emplace_back(std::make_unique<Worker>(taskQueue, activeThreads, stop));
+            logger() << "ThreadPool: Thread créé : " << i << "\n";
         }
     }
 
@@ -129,6 +140,7 @@ public:
         stop = true;
         taskQueue.cancelAll();
         workers.clear();
+        logger() << "ThreadPool: Pool threads détruit\n";
     }
 
     /*
@@ -141,7 +153,13 @@ public:
      */
     bool start(std::unique_ptr<Runnable> runnable) {
         // TODO
-        return taskQueue.push(std::move(runnable));
+        if (taskQueue.push(std::move(runnable))) {
+            logger() << "ThreadPool: Tâche ajoutée au pool.\n";
+            return true;
+        } else {
+            logger() << "ThreadPool: Tâche refusée.\n";
+            return false;
+        }
     }
 
     /* Returns the number of currently running threads. They do not need to be executing a task,
