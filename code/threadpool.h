@@ -7,6 +7,9 @@
 #include <vector>
 #include <chrono>
 #include <cassert>
+#include <map>
+#include <stdlib.h>
+#include <time.h>
 #include <pcosynchro/pcologger.h>
 #include <pcosynchro/pcothread.h>
 #include <pcosynchro/pcohoaremonitor.h>
@@ -32,6 +35,7 @@ private:
     struct Worker {
         std::unique_ptr<PcoThread> thread;
         bool isWorking;
+        bool timedOut;
         std::chrono::milliseconds previousTaskEnd;
     };
 
@@ -41,7 +45,7 @@ private:
 
     std::atomic<size_t> activeThreads;
 
-    std::vector<Worker> workers; //TODO: maybe replace with map not sure
+    std::map<size_t, Worker> workers; //TODO: maybe replace with map not sure
 
     std::queue<std::unique_ptr<Runnable>> taskQueue;
 
@@ -56,26 +60,65 @@ private:
 
             //TODO: how to tell specific thread to stop
             //TODO: find way to calculat time for each
+
+            monitorIn();
+
+            removingTimedOutThread = true;
+
+            for (auto &worker : workers) {
+                if (!worker.second.isWorking) {
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()) - worker.second.previousTaskEnd >= idleTimeout) {
+
+                        worker.second.timedOut = true;
+
+                    }
+                }
+            }
+
+            for (size_t i = 0; i < activeThreads; i++) {
+                signal(waiting_task);
+            }
+            activeThreads--;
+
+            removingTimedOutThread = false;
+            signal(removal_finished);
+            monitorOut();
         }
     }
 
 
 
-    void thread_work() {
+    void thread_work(size_t id) {
         while (!PcoThread::thisThread()->stopRequested()) {
 
             monitorIn();
 
-            wait(waiting_task);
+            while (taskQueue.empty() && !workers.at(id).timedOut && !PcoThread::thisThread()->stopRequested()) {
+                wait(waiting_task);
+            }
 
-            //TODO: set isworking to true somehow
 
-            if (PcoThread::thisThread()->stopRequested()) {
+            workers.at(id).isWorking = true;
+
+            if (PcoThread::thisThread()->stopRequested() || workers.at(id).timedOut) {
                 monitorOut();
                 return;
             }
 
-            //TODO: finish handling
+            std::unique_ptr<Runnable> task = std::move(taskQueue.front());
+            taskQueue.pop();
+
+            monitorOut();
+
+
+            task->run();
+
+
+            monitorIn();
+            workers.at(id).previousTaskEnd = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch());
+            workers.at(id).isWorking = false;
+
+            monitorOut();
 
         }
     }
@@ -131,7 +174,7 @@ public:
 
         //TODO: opti maybe
         for (auto &worker : workers) {
-            worker.thread->join();
+            worker.second.thread->join();
         }
     }
 
@@ -158,7 +201,14 @@ public:
         }
 
         if (activeThreads < maxThreadCount) {
-            workers.emplace_back(Worker{ std::make_unique<PcoThread>(&ThreadPool::thread_work,this), false,  (std::chrono::milliseconds)0 });
+            srand(time(NULL));
+            size_t id;
+            do {
+                id = rand() % maxThreadCount;
+            }
+            while (workers.find(id) != workers.end());
+
+            workers.emplace(id, Worker{ std::make_unique<PcoThread>(&ThreadPool::thread_work,this, id), false,  false,(std::chrono::milliseconds)0 });
             activeThreads++;
         }
 
