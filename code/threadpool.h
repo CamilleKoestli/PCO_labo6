@@ -14,6 +14,8 @@
 #include <pcosynchro/pcothread.h>
 #include <pcosynchro/pcohoaremonitor.h>
 
+#define LOG_THREADS 1
+
 class Runnable {
 public:
     virtual ~Runnable() = default;
@@ -28,79 +30,87 @@ private:
     size_t maxNbWaiting;
     std::chrono::milliseconds idleTimeout;
 
-
-
     PcoThread ThreadPoolMaster;
 
     struct Worker {
         std::unique_ptr<PcoThread> thread;
+        std::unique_ptr<Condition> waiting_t;
         bool isWorking;
-        bool timedOut;
         std::chrono::milliseconds previousTaskEnd;
     };
 
+    std::atomic<bool> removingTimedOutThread;
+    std::atomic<size_t> waitingThreads;
 
-    bool stop_requested;
-    bool removingTimedOutThread;
-
-    std::atomic<size_t> activeThreads;
-
-    std::map<size_t, Worker> workers; //TODO: maybe replace with map not sure
-
+    std::map<size_t, Worker> workers;
     std::queue<std::unique_ptr<Runnable>> taskQueue;
 
-
     Condition removal_finished;
-    Condition waiting_task;
 
+
+    std::chrono::milliseconds getTime() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch());
+    }
 
 
     void master_work() {
         while (!PcoThread::thisThread()->stopRequested()) {
-
-            //TODO: how to tell specific thread to stop
-            //TODO: find way to calculat time for each
-
             monitorIn();
 
             removingTimedOutThread = true;
 
+            std::chrono::milliseconds sleepTime(getTime());
+
             for (auto &worker : workers) {
-                if (!worker.second.isWorking) {
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()) - worker.second.previousTaskEnd >= idleTimeout) {
 
-                        worker.second.timedOut = true;
+                if (!worker.second.isWorking && ((getTime() - worker.second.previousTaskEnd) >= idleTimeout)) {
 
-                    }
+                    worker.second.thread->requestStop();
+
+                    signal(*worker.second.waiting_t);
+
+                    worker.second.thread->join();
+
+                    // Not sure about those 2
+                    worker.second.thread.reset();
+                    worker.second.waiting_t.reset();
+
+
+                    workers.erase(worker.first);
+
+#if LOG_THREADS
+                    std::cout << "======= nbr threads : " << workers.size() << " =======" << std::endl;
+#endif //LOG_THREADS
+
+                } else if (!worker.second.isWorking && (sleepTime > (getTime() - worker.second.previousTaskEnd))) {
+                    sleepTime = getTime() - worker.second.previousTaskEnd;
                 }
             }
 
-            for (size_t i = 0; i < activeThreads; i++) {
-                signal(waiting_task);
-            }
-            activeThreads--;
-
             removingTimedOutThread = false;
             signal(removal_finished);
+
             monitorOut();
+
+            PcoThread::usleep(sleepTime.count());
         }
     }
 
-
-
     void thread_work(size_t id) {
         while (!PcoThread::thisThread()->stopRequested()) {
-
             monitorIn();
 
-            while (taskQueue.empty() && !workers.at(id).timedOut && !PcoThread::thisThread()->stopRequested()) {
-                wait(waiting_task);
+            waitingThreads++;
+
+            while (taskQueue.empty() && !PcoThread::thisThread()->stopRequested()) {
+                wait(*workers.at(id).waiting_t);
             }
 
+            waitingThreads--;
 
             workers.at(id).isWorking = true;
 
-            if (PcoThread::thisThread()->stopRequested() || workers.at(id).timedOut) {
+            if (PcoThread::thisThread()->stopRequested()) {
                 monitorOut();
                 return;
             }
@@ -115,11 +125,9 @@ private:
 
 
             monitorIn();
-            workers.at(id).previousTaskEnd = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch());
+            workers.at(id).previousTaskEnd = getTime();
             workers.at(id).isWorking = false;
-
             monitorOut();
-
         }
     }
 
@@ -130,9 +138,8 @@ public:
         maxNbWaiting(maxNbWaiting),
         idleTimeout(idleTimeout),
         ThreadPoolMaster(&ThreadPool::master_work, this),
-        stop_requested(false),
         removingTimedOutThread(false),
-        activeThreads(0) {
+        waitingThreads(0) {
 
         //TODO:Verif if usefull
         if (maxThreadCount < 1) {
@@ -150,31 +157,45 @@ public:
     ~ThreadPool() {
         // TODO : End smoothly
 
-
-        //TODO: add missing things in destructor
-        monitorIn();
-
-
-        stop_requested = true;
-
-
-        while (removingTimedOutThread) {
+        if (removingTimedOutThread) {
             wait(removal_finished);
         }
 
-
         ThreadPoolMaster.requestStop();
+        ThreadPoolMaster.join();
 
-        while (!taskQueue.empty()) {
-            taskQueue.front()->cancelRun();
-            taskQueue.pop();
+        monitorIn();
+
+        for (auto &worker : workers) {
+            worker.second.thread->requestStop();
+
+            signal(*worker.second.waiting_t);
         }
 
         monitorOut();
 
-        //TODO: opti maybe
         for (auto &worker : workers) {
             worker.second.thread->join();
+        }
+
+        /* For some obscure reasons this cause a crash
+        for (auto &worker : workers) {
+
+            // Not sure about those 2
+            worker.second.thread.reset();
+            worker.second.waiting_t.reset();
+
+            workers.erase(worker.first);
+
+#if LOG_THREADS
+            std::cout << "======= nbr threads : " << workers.size() << " =======" << std::endl;
+#endif //LOG_THREADS
+        }*/
+
+
+        while (!taskQueue.empty()) {
+            taskQueue.front()->cancelRun();
+            taskQueue.pop();
         }
     }
 
@@ -188,19 +209,25 @@ public:
      * If the runnable has been started, returns true, and else (the last case), return false.
      */
     bool start(std::unique_ptr<Runnable> runnable) {
-
-
-        // TODO: verifiy if implementation is GorN
-
         monitorIn();
 
         if (taskQueue.size() >= maxNbWaiting) {
-            runnable->cancelRun();
             monitorOut();
+            runnable->cancelRun();
             return false;
         }
 
-        if (activeThreads < maxThreadCount) {
+        taskQueue.push(std::move(runnable));
+
+        if (waitingThreads > taskQueue.size()) {
+            for (auto &worker : workers) {
+                if (!worker.second.isWorking) {
+                    signal(*worker.second.waiting_t);
+                    break;
+                }
+            }
+
+        } else if (workers.size() < maxThreadCount) {
             srand(time(NULL));
             size_t id;
             do {
@@ -208,12 +235,16 @@ public:
             }
             while (workers.find(id) != workers.end());
 
-            workers.emplace(id, Worker{ std::make_unique<PcoThread>(&ThreadPool::thread_work,this, id), false,  false,(std::chrono::milliseconds)0 });
-            activeThreads++;
-        }
+            workers.emplace(id, Worker{ .thread = std::make_unique<PcoThread>(&ThreadPool::thread_work,this, id),
+                                        .waiting_t = std::make_unique<Condition>(),
+                                        .isWorking = false,
+                                        .previousTaskEnd = getTime() });
 
-        taskQueue.push(std::move(runnable));
-        signal(waiting_task);
+#if LOG_THREADS
+            std::cout << "======= nbr threads : " << workers.size() << " =======" << std::endl;
+#endif //LOG_THREADS
+
+        }
 
         monitorOut();
 
@@ -225,7 +256,7 @@ public:
      * just to be alive.
      */
     size_t currentNbThreads() {
-        return activeThreads;
+        return workers.size();
     }
 };
 
