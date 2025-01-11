@@ -9,11 +9,11 @@
 #include <pcosynchro/pcohoaremonitor.h>
 #include <pcosynchro/pcologger.h>
 #include <pcosynchro/pcothread.h>
+#include <queue>
 #include <stack>
 #include <stdlib.h>
 #include <time.h>
 #include <vector>
-#include <queue>
 
 #define LOG_THREADS 1
 
@@ -51,7 +51,7 @@ private:
 
     std::chrono::milliseconds getTime() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch());
+                std::chrono::steady_clock::now().time_since_epoch());
     }
 
     void master_work() {
@@ -61,7 +61,7 @@ private:
             removingTimedOutThread = true;
 
             std::chrono::milliseconds sleepTime(idleTimeout);
-            const std::chrono::milliseconds gracePeriod(10); // 10 ms de grâce
+            const std::chrono::milliseconds gracePeriod(10);// 10 ms de grâce
 
             for (auto it = workers.begin(); it != workers.end();) {
                 auto &worker = it->second;
@@ -79,9 +79,9 @@ private:
                     worker.thread->join();
                     it = workers.erase(it);
 
-                    #if LOG_THREADS
+#if LOG_THREADS
                     logger() << "Thread supprimé pour timeout\n";
-                    #endif
+#endif
                 } else {
                     ++it;
                 }
@@ -142,6 +142,9 @@ public:
     }
 
     ~ThreadPool() {
+
+        // TODO : End smoothly
+
         monitorIn();
 
         if (removingTimedOutThread) {
@@ -151,16 +154,27 @@ public:
         ThreadPoolMaster.requestStop();
         ThreadPoolMaster.join();
 
-        for (auto &worker : workers) {
+        for (auto &worker: workers) {
             worker.second.thread->requestStop();
             signal(*worker.second.waiting_t);
         }
 
         monitorOut();
 
-        for (auto &worker : workers) {
+        for (auto &worker: workers) {
             worker.second.thread->join();
         }
+
+        /* For some obscure reasons this cause a crash
+        for (auto &worker : workers) {
+            // Not sure about those 2
+            worker.second.thread.reset();
+            worker.second.waiting_t.reset();
+            workers.erase(worker.first);
+#if LOG_THREADS
+            std::cout << "======= nbr threads : " << workers.size() << " =======" << std::endl;
+#endif //LOG_THREADS
+        }*/
 
         while (!taskQueue.empty()) {
             taskQueue.front()->cancelRun();
@@ -180,7 +194,7 @@ public:
         taskQueue.push(std::move(runnable));
 
         if (waitingThreads > 0) {
-            for (auto &worker : workers) {
+            for (auto &worker: workers) {
                 if (!worker.second.isWorking) {
                     signal(*worker.second.waiting_t);
                     break;
@@ -189,14 +203,14 @@ public:
         } else if (workers.size() < maxThreadCount) {
             size_t id = workers.size();
             workers.emplace(id, Worker{
-                                    .thread = std::make_unique<PcoThread>(&ThreadPool::thread_work, this, id),
-                                    .waiting_t = std::make_unique<Condition>(),
-                                    .isWorking = false,
-                                    .previousTaskEnd = getTime()});
+                                        .thread = std::make_unique<PcoThread>(&ThreadPool::thread_work, this, id),
+                                        .waiting_t = std::make_unique<Condition>(),
+                                        .isWorking = false,
+                                        .previousTaskEnd = getTime()});
 
-            #if LOG_THREADS
+#if LOG_THREADS
             logger() << "Thread créé: " << id << "\n";
-            #endif
+#endif
         }
 
         monitorOut();
@@ -211,4 +225,4 @@ public:
     }
 };
 
-#endif // THREADPOOL_H
+#endif// THREADPOOL_H
