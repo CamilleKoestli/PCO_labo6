@@ -61,19 +61,17 @@ private:
             removingTimedOutThread = true;
 
             std::chrono::milliseconds sleepTime(idleTimeout);
-            const std::chrono::milliseconds gracePeriod(10);// 10 ms de grâce
+            const std::chrono::milliseconds gracePeriod(10);
 
             for (auto it = workers.begin(); it != workers.end();) {
                 auto &worker = it->second;
 
                 if (!worker.isWorking && (getTime() - worker.previousTaskEnd >= idleTimeout + gracePeriod)) {
-                    // Vérifier qu'il n'y a pas de tâches en attente pour ce thread
                     if (waitingThreads > 0 && !taskQueue.empty()) {
                         ++it;
                         continue;
                     }
 
-                    // Supprimer le thread
                     worker.thread->requestStop();
                     signal(*worker.waiting_t);
                     worker.thread->join();
