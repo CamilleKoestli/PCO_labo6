@@ -46,12 +46,15 @@ Pour éviter les threads inutile, le master vérifie l'activité des threads. Le
 | ------ | -------------------------------------- | -------- |
 | Test 1 | Vérification du fonctionnement de base | OK       |
 | Test 2 | Gestion d'une surcharge de file        | OK       |
-| Test 3 | Exécution par lots                     | OK       |
+| Test 3 | Exécution par lots                     | Echec    |
 | Test 4 | Gestion des tâches refusées            | Parfois  |
-| Test 5 | Timeout des threads inactifs           | Echec    |
+| Test 5 | Timeout des threads inactifs           | OK       |
+
+### Test 3 : Exécution par lot de 10x10 tâches
+
+L'objectif est de de valider l'exécution par lots successifs.
+
 
 ### Test 4 : Gestion des tâches refusées
-L'objectif de ce test est de ester le comportement avec une file pleine.
 
-### Test 5 : Gestion du timeout des threads inactifs
-L'objectif est de vérifier la suppression des threads inactifs.
+L'objectif de ce test est de ester le comportement avec une file pleine.
