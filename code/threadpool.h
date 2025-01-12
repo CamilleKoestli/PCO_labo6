@@ -1,3 +1,6 @@
+/**
+ */
+
 #ifndef THREADPOOL_H
 #define THREADPOOL_H
 
@@ -20,40 +23,70 @@
 class Runnable {
 public:
     virtual ~Runnable() = default;
+
+    /**
+     * @brief Exécute la tâche.
+     */
     virtual void run() = 0;
+
+    /**
+     * @brief Annule l'exécution de la tâche.
+     */
     virtual void cancelRun() = 0;
+
+    /**
+     * @brief Retourne un identifiant unique pour la tâche.
+     * @return L'identifiant de la tâche.
+     */
     virtual std::string id() = 0;
 };
 
+/**
+ * @brief Implémentation d'un thread pool avec suppression automatique des threads inactifs.
+ */
 class ThreadPool : public PcoHoareMonitor {
 private:
-    size_t maxThreadCount;
-    size_t maxNbWaiting;
-    std::chrono::milliseconds idleTimeout;
-
-    PcoThread ThreadPoolMaster;
-
+    /**
+     * @brief Structure représentant un thread worker dans le pool.
+     */
     struct Worker {
-        std::unique_ptr<PcoThread> thread;
-        std::unique_ptr<Condition> waiting_t;
-        bool isWorking = false;
-        std::chrono::milliseconds previousTaskEnd;
+        std::unique_ptr<PcoThread> thread;        // Thread associé au worker.
+        std::unique_ptr<Condition> waiting_t;     // Condition associée au worker.
+        bool isWorking = false;                   // Indique si le worker est en train de travailler.
+        std::chrono::milliseconds previousTaskEnd;// Temps de fin de la dernière tâche.
     };
 
-    std::atomic<bool> removingTimedOutThread;
-    std::atomic<size_t> waitingThreads;
-    std::atomic<size_t> activeWorkerCount;
+    size_t maxThreadCount;                // Nombre maximum de threads actifs.
+    size_t maxNbWaiting;                  // Taille maximale de la file d'attente.
+    std::chrono::milliseconds idleTimeout;// Temps d'inactivité avant suppression du thread.
 
-    std::map<size_t, Worker> workers;
-    std::queue<std::unique_ptr<Runnable>> taskQueue;
+    // Gestion des threads et des tâches
+    PcoThread ThreadPoolMaster;              // Thread maître pour la gestion des threads workers.
+    std::atomic<bool> removingTimedOutThread;// Indique si des threads sont en cours de suppression.
+    std::atomic<size_t> waitingThreads;      // Nombre de threads en attente.
+    std::atomic<size_t> activeWorkerCount;   // Nombre de threads actifs.
 
-    Condition removal_finished;
+    std::map<size_t, Worker> workers;               // Map des threads workers.
+    std::queue<std::unique_ptr<Runnable>> taskQueue;// File d'attente des tâches.
 
+    Condition removal_finished;// Condition signalant la fin de la suppression des threads.
+
+
+    /**
+     * @brief Retourne l'heure actuelle en millisecondes.
+     * @return Heure actuelle en millisecondes.
+     */
     std::chrono::milliseconds getTime() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch());
     }
 
+public:
+
+    /**
+     * @brief Fonction exécutée par le thread maître.
+     * Gère la suppression des threads inactifs.
+     */
     void master_work() {
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
@@ -94,6 +127,11 @@ private:
         }
     }
 
+    /**
+     * @brief Fonction exécutée par chaque thread worker.
+     * Gère la récupération et l'exécution des tâches.
+     * @param id Identifiant du worker.
+     */
     void thread_work(size_t id) {
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
@@ -126,6 +164,13 @@ private:
     }
 
 public:
+
+    /**
+     * @brief Constructeur du thread pool.
+     * @param maxThreadCount Nombre maximum de threads actifs.
+     * @param maxNbWaiting Taille maximale de la file d'attente.
+     * @param idleTimeout Temps d'inactivité avant suppression des threads.
+     */
     ThreadPool(int maxThreadCount, int maxNbWaiting, std::chrono::milliseconds idleTimeout)
         : maxThreadCount(maxThreadCount),
           maxNbWaiting(maxNbWaiting),
@@ -139,9 +184,11 @@ public:
         }
     }
 
+    /**
+     * @brief Destructeur du thread pool.
+     * Termine proprement tous les threads et vide la file d'attente.
+     */
     ~ThreadPool() {
-
-        // TODO : End smoothly
 
         monitorIn();
 
@@ -180,6 +227,11 @@ public:
         }
     }
 
+    /**
+     * @brief Ajoute une tâche à la file d'attente.
+     * @param runnable Pointeur unique vers la tâche à ajouter.
+     * @return `true` si la tâche a été ajoutée avec succès, `false` sinon.
+     */
     bool start(std::unique_ptr<Runnable> runnable) {
         monitorIn();
 
@@ -215,6 +267,10 @@ public:
         return true;
     }
 
+    /**
+     * @brief Retourne le nombre actuel de threads actifs dans le pool.
+     * @return Nombre de threads actifs.
+     */
     size_t currentNbThreads() {
         monitorIn();
         size_t count = workers.size();
