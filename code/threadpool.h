@@ -49,7 +49,6 @@ private:
 
     Condition removal_finished;
 
-
     std::chrono::milliseconds getTime() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch());
@@ -63,19 +62,23 @@ private:
 
             std::chrono::milliseconds sleepTime(idleTimeout);
             const std::chrono::milliseconds gracePeriod(10);// 10 ms de grâce
+
             for (auto it = workers.begin(); it != workers.end();) {
                 auto &worker = it->second;
+
                 if (!worker.isWorking && (getTime() - worker.previousTaskEnd >= idleTimeout + gracePeriod)) {
                     // Vérifier qu'il n'y a pas de tâches en attente pour ce thread
                     if (waitingThreads > 0 && !taskQueue.empty()) {
                         ++it;
                         continue;
                     }
+
                     // Supprimer le thread
                     worker.thread->requestStop();
                     signal(*worker.waiting_t);
                     worker.thread->join();
                     it = workers.erase(it);
+
 #if LOG_THREADS
                     logger() << "Thread supprimé pour timeout\n";
 #endif
@@ -97,11 +100,9 @@ private:
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
 
-
             while (taskQueue.empty() && !PcoThread::thisThread()->stopRequested()) {
                 wait(*workers.at(id).waiting_t);
             }
-
 
             if (PcoThread::thisThread()->stopRequested()) {
                 monitorOut();
@@ -110,15 +111,13 @@ private:
 
             activeWorkerCount++;
             workers.at(id).isWorking = true;
-            auto task = std::move(taskQueue.front());
 
+            auto task = std::move(taskQueue.front());
             taskQueue.pop();
 
             monitorOut();
 
-
             task->run();
-
 
             monitorIn();
             workers.at(id).previousTaskEnd = getTime();
@@ -127,7 +126,6 @@ private:
             monitorOut();
         }
     }
-
 
 public:
     ThreadPool(int maxThreadCount, int maxNbWaiting, std::chrono::milliseconds idleTimeout)
@@ -143,8 +141,8 @@ public:
         }
     }
 
-
     ~ThreadPool() {
+
         // TODO : End smoothly
 
         monitorIn();
@@ -158,7 +156,6 @@ public:
 
         for (auto &worker: workers) {
             worker.second.thread->requestStop();
-
             signal(*worker.second.waiting_t);
         }
 
@@ -170,18 +167,14 @@ public:
 
         /* For some obscure reasons this cause a crash
         for (auto &worker : workers) {
-
             // Not sure about those 2
             worker.second.thread.reset();
             worker.second.waiting_t.reset();
-
             workers.erase(worker.first);
-
 #if LOG_THREADS
             std::cout << "======= nbr threads : " << workers.size() << " =======" << std::endl;
 #endif //LOG_THREADS
         }*/
-
 
         while (!taskQueue.empty()) {
             taskQueue.front()->cancelRun();
@@ -189,18 +182,14 @@ public:
         }
     }
 
-
-    /*
-     * Start a runnable. If a thread in the pool is available, assign the
-     * runnable to it. If no thread is available but the pool can grow, create a new
-     * pool thread and assign the runnable to it. If no thread is available and the
-     * pool is at max capacity and there are less than maxNbWaiting threads waiting,
-     * block the caller until a thread becomes available again, and else do not run the runnable.
-     * If the runnable has been started, returns true, and else (the last case), return false.
-     */
     bool start(std::unique_ptr<Runnable> runnable) {
         monitorIn();
 
+        if (taskQueue.size() >= maxNbWaiting) {
+            monitorOut();
+            runnable->cancelRun();
+            return false;
+        }
 
         taskQueue.push(std::move(runnable));
 
@@ -218,6 +207,7 @@ public:
                                         .waiting_t = std::make_unique<Condition>(),
                                         .isWorking = false,
                                         .previousTaskEnd = getTime()});
+
 #if LOG_THREADS
             logger() << "Thread créé: " << id << "\n";
 #endif
@@ -227,10 +217,6 @@ public:
         return true;
     }
 
-
-    /* Returns the number of currently running threads. They do not need to be executing a task,
-     * just to be alive.
-     */
     size_t currentNbThreads() {
         monitorIn();
         size_t count = workers.size();
