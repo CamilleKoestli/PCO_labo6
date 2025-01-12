@@ -4,7 +4,7 @@ Auteurs: Camille Koestli et Alex Berberat
 
 ## Description des fonctionnalités du logiciel
 
-Le programme implémente un thread pool qui permet de gérer un ensemble de threads pour exécuter des tâches de manière concurrente. Les principales fonctionnalités sont:
+Le laboratoire implémente un thread pool qui permet de gérer un ensemble de threads pour exécuter des tâches de manière concurrente. Il gère un ensemble de threads de manière dynamique pour exécuter des tâches en parallèle, tout en respectant des contraintes comme des limites de threads actifs, une gestion de file d'attente et des timeouts. Les principales fonctionnalités sont:
 
 - Gestion des tâches : Les tâches sont représentées par des objets de la classe Runnable, qui doivent implémenter les méthodes `run()`, `cancelRun()`, et `id()`.
 
@@ -16,16 +16,18 @@ Le programme implémente un thread pool qui permet de gérer un ensemble de thre
 
 ## Choix d'implémentation
 
-### Approche
+### Structure
 
 L'implémentation de notre code utilise un système de thread pool dynamique, c'est-à-dire que les threads sont créés ou détruits en fonction de la charge de travail.
 Voici les classes principales, les sous-classes en fonction de leur rôle :
 
-- `ThreadPool` : Gère la création, la suppression, et l'exécution des threads.
 - `Runnable` : Définit une interface pour les tâches à exécuter.
-- `Worker` : Structure représentant chaque thread, incluant son état et ses conditions de synchronisation.
+- `ThreadPool` : Gère la création, la suppression, et l'exécution des threads.
+- `Worker` : Structure représentant chaque thread, incluant son état et ses conditions de synchronisation. Lrsqu'une tâche est disponible, la condition associée au `Worker` est signalée, permettant au thread de récupérer la tâche. Après l'exécution d'une tâche, `isWorking` est remis à `false` et `previousTaskEnd` est mis à jour. Le thread master utilise `previousTaskEnd` pour supprimer les threads inactifs qui dépassent `idleTimeout`.
 
-### Méthodes
+### Gestion du Threadpool
+
+Le thread pool est géré par la classe `ThreadPool`. Cette classe est responsable de la gestion des threads, de la file d'attente des tâches, et de la synchronisation entre les threads.
 
 - `void master_work();` : Fonction exécutée par le maître du thread pool. Elle surveille l'état des threads et supprime les threads inactifs.
 - `void thread_work(size_t id);`: Fonction exécutée par chaque thread worker pour exécuter les tâches.
@@ -40,15 +42,30 @@ Voici les classes principales, les sous-classes en fonction de leur rôle :
 
 Pour éviter les threads inutile, le master vérifie l'activité des threads. Les threads inactifs, après un certain temps (`idleTimeout`) sont supprimés, sauf si des tâches sont en attente.
 
+### Arrêt du thread pool
+Le thread pool utilise un destructeur `~ThreadPool` pour effectuer un arrêt. Cette méthode va :
+
+1. Terminer toutes les tâches en cours.
+2. Libérer les threads actifs.
+3. Nettoyer la file d'attente des tâches restantes.
+
 ## Tests effectués
 
 | Test   | Objectif                               | Résultat |
 | ------ | -------------------------------------- | -------- |
 | Test 1 | Vérification du fonctionnement de base | OK       |
 | Test 2 | Gestion d'une surcharge de file        | OK       |
-| Test 3 | Exécution par lots                     | Echec    |
+| Test 3 | Exécution par lots                     | Échec    |
 | Test 4 | Gestion des tâches refusées            | Parfois  |
 | Test 5 | Timeout des threads inactifs           | OK       |
+
+### Test 1 : Fonctionnement de base de base
+
+L'objectif est la vérification de l'exécution correcte des tâches pour des tailles de pool variées.
+
+### Test 2 : Gestion d'une surcharge de file
+
+L'objectif est de vérifier que le pool de threads gère correctement les tâches en attente lorsque la file est pleine. Il simule des appels simultanés à la méthode `start()` depuis plusieurs threads pour vérifier l'absence de deadlocks.
 
 ### Test 3 : Exécution par lot de 10x10 tâches
 
@@ -59,3 +76,7 @@ Malheureusement, des tâches semblent ne pas être exécutées dans le délai at
 
 L'objectif de ce test est de ester le comportement avec une file pleine.
 Malheureusement, le nombre de tâches rejetées ou perdues ne correspond pas aux attentes. La gestion des threads disponibles et la file d'attente des tâches ne sont pas en phase.
+
+### Test 5 : Timeout des threads inactifs
+
+L'objectif est de vérifier que les threads inactifs sont supprimés après un certain temps.
