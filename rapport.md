@@ -37,7 +37,7 @@ Le thread pool est géré par la classe `ThreadPool`. Cette classe est responsab
 
 - `taskQueue` : File d'attente des tâches.
 - `workers` : Carte contenant l'état de chaque thread.
-- Variables partagées comme `waitingThreads` et `activeWorkerCount`.
+- Variable partagée comme `waitingThreads` .
 
 ### Suppression des threads
 
