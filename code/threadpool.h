@@ -76,6 +76,9 @@ private:
 
     Condition removal_finished;// Condition signalant la fin de la suppression des threads.
 
+    Condition maxWait;
+
+    size_t waitingTasks = 0;
 
     /**
      * @brief Retourne l'heure actuelle en millisecondes.
@@ -161,9 +164,11 @@ public:
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
 
+            waitingThreads++;
             while (taskQueue.empty() && !PcoThread::thisThread()->stopRequested()) {
                 wait(*workers.at(id).waiting_t);
             }
+            waitingThreads--;
 
             if (PcoThread::thisThread()->stopRequested()) {
                 monitorOut();
@@ -201,6 +206,11 @@ public:
             workers.at(id).previousTaskEnd = getTime();
             workers.at(id).isWorking = false;
             activeWorkerCount--;
+
+            if (waitingTasks > 0) {
+                signal(maxWait);
+            }
+
             monitorOut();
         }
 
@@ -287,13 +297,14 @@ public:
 
         monitorIn();
 
-        if (taskQueue.size() >= maxNbWaiting || removingTimedOutThread) {
+        /*if (taskQueue.size() >= maxNbWaiting || removingTimedOutThread) {
             monitorOut();
             runnable->cancelRun();
             return false;
-        }
+        }*/
 
-        taskQueue.push(std::move(runnable));
+
+
 
 #if LOG_TASKS
         start_logger
@@ -303,13 +314,18 @@ public:
 #endif
 
         if (waitingThreads > 0) {
+            taskQueue.push(std::move(runnable));
+
             for (auto &worker : workers) {
                 if (!worker.second.isWorking) {
                     signal(*worker.second.waiting_t);
                     break;
                 }
             }
+
+
         } else if (workers.size() < maxThreadCount) {
+            taskQueue.push(std::move(runnable));
             size_t id = workers.size();
             workers.emplace(id, Worker{
                                         .thread = std::make_unique<PcoThread>(&ThreadPool::thread_work, this, id),
@@ -321,6 +337,15 @@ public:
             start_logger << "        [Thread] Created id: " << id << "\n";
 #endif
 
+        } else if (waitingTasks < maxNbWaiting) {
+            waitingTasks++;
+            wait(maxWait);
+            waitingTasks--;
+            taskQueue.push(std::move(runnable));
+        } else {
+            monitorOut();
+            runnable->cancelRun();
+            return false;
         }
 
 
