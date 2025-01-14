@@ -1,4 +1,10 @@
 /**
+ * Gestion d'un pool de threads pour exécuter des tâches concurrentes avec suppression des threads inactifs.
+ * 
+ * Ce fichier contient l'implémentation de la classe `ThreadPool` permettant de gérer efficacement un ensemble de threads pour l'exécution de tâches en parallèle.
+ * 
+ * @authors : Alex Berberat et Camille Koestli
+ * 
  */
 
 #ifndef THREADPOOL_H
@@ -66,19 +72,19 @@ private:
     std::chrono::milliseconds idleTimeout;// Temps d'inactivité avant suppression du thread.
 
     // Gestion des threads et des tâches
-    PcoThread ThreadPoolMaster;              // Thread maître pour la gestion des threads workers.
+    PcoThread ThreadPoolMaster;// Thread maître pour la gestion des threads workers.
     // std::atomic<bool> removingTimedOutThread;// Indique si des threads sont en cours de suppression.
-    std::atomic<size_t> waitingThreads;      // Nombre de threads en attente.
-    std::atomic<size_t> activeWorkerCount;   // Nombre de threads actifs.
+    std::atomic<size_t> waitingThreads;   // Nombre de threads en attente.
+    std::atomic<size_t> activeWorkerCount;// Nombre de threads actifs.
 
     std::map<size_t, Worker> workers;               // Map des threads workers.
     std::queue<std::unique_ptr<Runnable>> taskQueue;// File d'attente des tâches.
 
     Condition removal_finished;// Condition signalant la fin de la suppression des threads.
 
-    Condition maxWait;
+    Condition maxWait; // Condition signalant que la file d'attente est pleine.
 
-    size_t waitingTasks = 0;
+    size_t waitingTasks = 0; // Nombre de tâches en attente.
 
     /**
      * @brief Retourne l'heure actuelle en millisecondes.
@@ -86,11 +92,10 @@ private:
      */
     std::chrono::milliseconds getTime() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch());
+                std::chrono::steady_clock::now().time_since_epoch());
     }
 
 public:
-
     /**
      * @brief Fonction exécutée par le thread maître.
      * Gère la suppression des threads inactifs.
@@ -103,8 +108,6 @@ public:
 
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
-
-            //  removingTimedOutThread = true;
 
             std::chrono::milliseconds sleepTime(idleTimeout);
             const std::chrono::milliseconds gracePeriod(10);
@@ -126,9 +129,9 @@ public:
 
 #if LOG_THREADS
                     master_work_logger
-                        << "===== [master_work]\n"
-                        << "         [Thread] TimedOut: " << tmp << "\n"
-                        << "         [ThreadPool] Size: " << workers.size() << "\n";
+                            << "===== [master_work]\n"
+                            << "         [Thread] TimedOut: " << tmp << "\n"
+                            << "         [ThreadPool] Size: " << workers.size() << "\n";
 #endif
 
                 } else {
@@ -141,7 +144,6 @@ public:
             master_work_logger.flush();
 #endif
 
-            //    removingTimedOutThread = false;
             signal(removal_finished);
 
             monitorOut();
@@ -178,15 +180,12 @@ public:
             activeWorkerCount++;
             workers.at(id).isWorking = true;
 
-
-
 #if LOG_TASKS
             thread_work_logger
-                << "===== [thread_work]\n"
-                << "         [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n"
-                << "         [TaskQueue] Size: " << taskQueue.size() << "\n";
+                    << "===== [thread_work]\n"
+                    << "         [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n"
+                    << "         [TaskQueue] Size: " << taskQueue.size() << "\n";
 #endif
-
 
             auto task = std::move(taskQueue.front());
             taskQueue.pop();
@@ -196,7 +195,6 @@ public:
             logger() << thread_work_logger.str();
             thread_work_logger.flush();
 #endif
-
 
             monitorOut();
 
@@ -213,13 +211,9 @@ public:
 
             monitorOut();
         }
-
-
-
     }
 
 public:
-
     /**
      * @brief Constructeur du thread pool.
      * @param maxThreadCount Nombre maximum de threads actifs.
@@ -228,12 +222,12 @@ public:
      */
     ThreadPool(int maxThreadCount, int maxNbWaiting, std::chrono::milliseconds idleTimeout)
         : maxThreadCount(maxThreadCount),
-        maxNbWaiting(maxNbWaiting),
-        idleTimeout(idleTimeout),
-        ThreadPoolMaster(&ThreadPool::master_work, this),
-        /*removingTimedOutThread(false),*/
-        waitingThreads(0),
-        activeWorkerCount(0) {
+          maxNbWaiting(maxNbWaiting),
+          idleTimeout(idleTimeout),
+          ThreadPoolMaster(&ThreadPool::master_work, this),
+          /*removingTimedOutThread(false),*/
+          waitingThreads(0),
+          activeWorkerCount(0) {
         if (maxThreadCount < 1 || maxNbWaiting < 1 || idleTimeout.count() < 1) {
             throw std::invalid_argument("Invalid thread pool parameters");
         }
@@ -248,36 +242,21 @@ public:
         logger() << "===== [~ThreadPool] Called\n";
 #endif
 
-
-
         monitorIn();
-
-
 
         ThreadPoolMaster.requestStop();
         ThreadPoolMaster.join();
 
-        for (auto &worker : workers) {
+        for (auto &worker: workers) {
             worker.second.thread->requestStop();
             signal(*worker.second.waiting_t);
         }
 
         monitorOut();
 
-        for (auto &worker : workers) {
+        for (auto &worker: workers) {
             worker.second.thread->join();
         }
-
-        /* For some obscure reasons this cause a crash
-        for (auto &worker : workers) {
-            // Not sure about those 2
-            worker.second.thread.reset();
-            worker.second.waiting_t.reset();
-            workers.erase(worker.first);
-#if LOG_THREADS
-            std::cout << "======= nbr threads : " << workers.size() << " =======" << std::endl;
-#endif //LOG_THREADS
-        }*/
 
         while (!taskQueue.empty()) {
             taskQueue.front()->cancelRun();
@@ -298,18 +277,17 @@ public:
 
         monitorIn();
 
-
 #if LOG_TASKS
         start_logger
-            << "===== [start]\n"
-            << "        [Task] New: " << runnable->id() << "\n"
-            << "        [TaskQueue] Size: " << taskQueue.size() << "\n";
+                << "===== [start]\n"
+                << "        [Task] New: " << runnable->id() << "\n"
+                << "        [TaskQueue] Size: " << taskQueue.size() << "\n";
 #endif
 
         if (waitingThreads > 0) {
             taskQueue.push(std::move(runnable));
 
-            for (auto &worker : workers) {
+            for (auto &worker: workers) {
                 if (!worker.second.isWorking) {
                     signal(*worker.second.waiting_t);
                     break;
@@ -324,7 +302,7 @@ public:
                                         .thread = std::make_unique<PcoThread>(&ThreadPool::thread_work, this, id),
                                         .waiting_t = std::make_unique<Condition>(),
                                         .isWorking = false,
-                                        .previousTaskEnd = getTime() });
+                                        .previousTaskEnd = getTime()});
 
 #if LOG_THREADS
             start_logger << "        [Thread] Created id: " << id << "\n";
@@ -340,7 +318,6 @@ public:
             runnable->cancelRun();
             return false;
         }
-
 
 
 #if LOG

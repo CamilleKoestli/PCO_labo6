@@ -1,6 +1,6 @@
 # Thread pool
 
-Auteurs: Camille Koestli et Alex Berberat
+Auteurs: Alex Berberat et Camille Koestli
 
 ## Description des fonctionnalités du logiciel
 
@@ -18,7 +18,7 @@ Le laboratoire implémente un thread pool qui permet de gérer un ensemble de th
 
 ### Structure
 
-L'implémentation de notre code utilise un système de thread pool dynamique, c'est-à-dire que les threads sont créés ou détruits en fonction de la charge de travail.
+L'implémentation de notre code utilise un système de thread pool dynamique, c'est-à-dire que les threads sont créés ou détruits en fonction de la charge de travail. Nous avons choisi de faire une implémentation sur le modèle avec un master thread qui gère les threads actifs et des threads qui exécutent les tâches récupérées dans la file d'attente.
 Voici les classes principales, les sous-classes en fonction de leur rôle :
 
 - `Runnable` : Définit une interface pour les tâches à exécuter.
@@ -31,7 +31,8 @@ Le thread pool est géré par la classe `ThreadPool`. Cette classe est responsab
 
 - `void master_work();` : Fonction exécutée par le maître du thread pool. Elle surveille l'état des threads et supprime les threads inactifs.
 - `void thread_work(size_t id);`: Fonction exécutée par chaque thread worker pour exécuter les tâches.
-
+- `void start();` : Cette fonction est essentielle pour démarrer le thread pool. Elle permet d'ajouter des tâches `Runnable` à la file d'attente pour être exécutées par les threads.
+  
 ### Synchronisation
 
 - `taskQueue` : File d'attente des tâches.
@@ -40,14 +41,16 @@ Le thread pool est géré par la classe `ThreadPool`. Cette classe est responsab
 
 ### Suppression des threads
 
-Pour éviter les threads inutile, le master vérifie l'activité des threads. Les threads inactifs, après un certain temps (`idleTimeout`) sont supprimés, sauf si des tâches sont en attente.
+Pour éviter les threads inutile, le master vérifie l'activité des threads. Les threads inactifs, après un certain temps `idleTimeout` sont supprimés, sauf si des tâches sont en attente.
 
 ### Arrêt du thread pool
+
 Le thread pool utilise un destructeur `~ThreadPool` pour effectuer un arrêt. Cette méthode va :
 
-1. Terminer toutes les tâches en cours.
-2. Libérer les threads actifs.
-3. Nettoyer la file d'attente des tâches restantes.
+1. L'arrêt du thread maître.
+2. La demande d'arrêt de chaque thread ouvrier.
+3. L'attente de la fin de l'exécution de tous les threads restants `join()`.
+4. L'annulation des tâches restantes dans la file d'attente.
 
 ## Tests effectués
 
@@ -55,8 +58,8 @@ Le thread pool utilise un destructeur `~ThreadPool` pour effectuer un arrêt. Ce
 | ------ | -------------------------------------- | -------- |
 | Test 1 | Vérification du fonctionnement de base | OK       |
 | Test 2 | Gestion d'une surcharge de file        | OK       |
-| Test 3 | Exécution par lots                     | Échec    |
-| Test 4 | Gestion des tâches refusées            | Parfois  |
+| Test 3 | Exécution par lots                     | OK       |
+| Test 4 | Gestion des tâches refusées            | OK       |
 | Test 5 | Timeout des threads inactifs           | OK       |
 
 ### Test 1 : Fonctionnement de base de base
@@ -70,12 +73,10 @@ L'objectif est de vérifier que le pool de threads gère correctement les tâche
 ### Test 3 : Exécution par lot de 10x10 tâches
 
 L'objectif est de de valider l'exécution par lots successifs.
-Malheureusement, des tâches semblent ne pas être exécutées dans le délai attendu. Les threads sont supprimés avant d'avoir terminé leur travail, ou les délais d'attente ne sont pas respectés correctement.
 
 ### Test 4 : Gestion des tâches refusées
 
 L'objectif de ce test est de ester le comportement avec une file pleine.
-Malheureusement, le nombre de tâches rejetées ou perdues ne correspond pas aux attentes. La gestion des threads disponibles et la file d'attente des tâches ne sont pas en phase.
 
 ### Test 5 : Timeout des threads inactifs
 
