@@ -71,9 +71,7 @@ private:
     size_t maxNbWaiting;                  // Taille maximale de la file d'attente.
     std::chrono::milliseconds idleTimeout;// Temps d'inactivité avant suppression du thread.
 
-    // Gestion des threads et des tâches
     PcoThread ThreadPoolMaster;// Thread maître pour la gestion des threads workers.
-    // std::atomic<bool> removingTimedOutThread;// Indique si des threads sont en cours de suppression.
     std::atomic<size_t> waitingThreads;   // Nombre de threads en attente.
     std::atomic<size_t> activeWorkerCount;// Nombre de threads actifs.
 
@@ -81,7 +79,6 @@ private:
     std::queue<std::unique_ptr<Runnable>> taskQueue;// File d'attente des tâches.
 
     Condition removal_finished;// Condition signalant la fin de la suppression des threads.
-
     Condition maxWait; // Condition signalant que la file d'attente est pleine.
 
     size_t waitingTasks = 0; // Nombre de tâches en attente.
@@ -225,7 +222,6 @@ public:
           maxNbWaiting(maxNbWaiting),
           idleTimeout(idleTimeout),
           ThreadPoolMaster(&ThreadPool::master_work, this),
-          /*removingTimedOutThread(false),*/
           waitingThreads(0),
           activeWorkerCount(0) {
         if (maxThreadCount < 1 || maxNbWaiting < 1 || idleTimeout.count() < 1) {

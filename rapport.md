@@ -80,4 +80,4 @@ L'objectif de ce test est de ester le comportement avec une file pleine. Ca simu
 
 ### Test 5 : Timeout des threads inactifs
 
-L'objectif est de vérifier que les threads inactifs sont supprimés après un certain temps d'inactivité `idleTimeout`. 
+L'objectif est de vérifier que les threads inactifs sont supprimés après un certain temps d'inactivité `idleTimeout`.
