@@ -62,7 +62,7 @@ private:
      */
     struct Worker {
         std::unique_ptr<PcoThread> thread;        // Thread associé au worker.
-        std::unique_ptr<Condition> waiting_t;     // Condition associée au worker.
+        std::unique_ptr<Condition> waitingT;     // Condition associée au worker.
         bool isWorking = false;                   // Indique si le worker est en train de travailler.
         std::chrono::milliseconds previousTaskEnd;// Temps de fin de la dernière tâche.
     };
@@ -78,10 +78,10 @@ private:
     std::map<size_t, Worker> workers;               // Map des threads workers.
     std::queue<std::unique_ptr<Runnable>> taskQueue;// File d'attente des tâches.
 
-    Condition removal_finished;// Condition signalant la fin de la suppression des threads.
-    Condition maxWait; // Condition signalant que la file d'attente est pleine.
+    Condition removalFinished;// Condition signalant la fin de la suppression des threads.
+    Condition waitingTask; // Condition signalant que la file d'attente est pleine.
 
-    size_t waitingTasks = 0; // Nombre de tâches en attente.
+    size_t sizeWaitingTasks = 0; // Nombre de tâches en attente.
 
     /**
      * @brief Retourne l'heure actuelle en millisecondes.
@@ -99,9 +99,9 @@ public:
      */
     void master_work() {
 
-#if LOG
-        std::stringstream master_work_logger;
-#endif
+// #if LOG
+//         std::stringstream master_work_logger;
+// #endif
 
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
@@ -120,28 +120,28 @@ public:
                     }
 
                     worker.thread->requestStop();
-                    signal(*worker.waiting_t);
+                    signal(*worker.waitingT);
                     worker.thread->join();
                     it = workers.erase(it);
 
-#if LOG_THREADS
-                    master_work_logger
-                            << "===== [master_work]\n"
-                            << "         [Thread] TimedOut: " << tmp << "\n"
-                            << "         [ThreadPool] Size: " << workers.size() << "\n";
-#endif
+// #if LOG_THREADS
+//                     master_work_logger
+//                             << "===== [master_work]\n"
+//                             << "         [Thread] TimedOut: " << tmp << "\n"
+//                             << "         [ThreadPool] Size: " << workers.size() << "\n";
+// #endif
 
                 } else {
                     ++it;
                 }
             }
 
-#if LOG
-            logger() << master_work_logger.str();
-            master_work_logger.flush();
-#endif
+// #if LOG
+//             logger() << master_work_logger.str();
+//             master_work_logger.flush();
+// #endif
 
-            signal(removal_finished);
+            signal(removalFinished);
 
             monitorOut();
 
@@ -165,7 +165,7 @@ public:
 
             waitingThreads++;
             while (taskQueue.empty() && !PcoThread::thisThread()->stopRequested()) {
-                wait(*workers.at(id).waiting_t);
+                wait(*workers.at(id).waitingT);
             }
             waitingThreads--;
 
@@ -177,21 +177,21 @@ public:
             activeWorkerCount++;
             workers.at(id).isWorking = true;
 
-#if LOG_TASKS
-            thread_work_logger
-                    << "===== [thread_work]\n"
-                    << "         [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n"
-                    << "         [TaskQueue] Size: " << taskQueue.size() << "\n";
-#endif
+// #if LOG_TASKS
+//             thread_work_logger
+//                     << "===== [thread_work]\n"
+//                     << "         [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n"
+//                     << "         [TaskQueue] Size: " << taskQueue.size() << "\n";
+// #endif
 
             auto task = std::move(taskQueue.front());
             taskQueue.pop();
 
 
-#if LOG
-            logger() << thread_work_logger.str();
-            thread_work_logger.flush();
-#endif
+// #if LOG
+//             logger() << thread_work_logger.str();
+//             thread_work_logger.flush();
+// #endif
 
             monitorOut();
 
@@ -202,8 +202,8 @@ public:
             workers.at(id).isWorking = false;
             activeWorkerCount--;
 
-            if (waitingTasks > 0) {
-                signal(maxWait);
+            if (sizeWaitingTasks > 0) {
+                signal(waitingTask);
             }
 
             monitorOut();
@@ -234,9 +234,9 @@ public:
      * Termine proprement tous les threads et vide la file d'attente.
      */
     ~ThreadPool() {
-#if LOG
-        logger() << "===== [~ThreadPool] Called\n";
-#endif
+// #if LOG
+//         logger() << "===== [~ThreadPool] Called\n";
+// #endif
 
         monitorIn();
 
@@ -245,7 +245,7 @@ public:
 
         for (auto &worker: workers) {
             worker.second.thread->requestStop();
-            signal(*worker.second.waiting_t);
+            signal(*worker.second.waitingT);
         }
 
         monitorOut();
@@ -267,25 +267,25 @@ public:
      */
     bool start(std::unique_ptr<Runnable> runnable) {
 
-#if LOG
-        std::stringstream start_logger;
-#endif
+// #if LOG
+//         std::stringstream start_logger;
+// #endif
 
         monitorIn();
 
-#if LOG_TASKS
-        start_logger
-                << "===== [start]\n"
-                << "        [Task] New: " << runnable->id() << "\n"
-                << "        [TaskQueue] Size: " << taskQueue.size() << "\n";
-#endif
+// #if LOG_TASKS
+//         start_logger
+//                 << "===== [start]\n"
+//                 << "        [Task] New: " << runnable->id() << "\n"
+//                 << "        [TaskQueue] Size: " << taskQueue.size() << "\n";
+// #endif
 
         if (waitingThreads > 0) {
             taskQueue.push(std::move(runnable));
 
             for (auto &worker: workers) {
                 if (!worker.second.isWorking) {
-                    signal(*worker.second.waiting_t);
+                    signal(*worker.second.waitingT);
                     break;
                 }
             }
@@ -296,18 +296,18 @@ public:
             size_t id = workers.size();
             workers.emplace(id, Worker{
                                         .thread = std::make_unique<PcoThread>(&ThreadPool::thread_work, this, id),
-                                        .waiting_t = std::make_unique<Condition>(),
+                                        .waitingT = std::make_unique<Condition>(),
                                         .isWorking = false,
                                         .previousTaskEnd = getTime()});
 
-#if LOG_THREADS
-            start_logger << "        [Thread] Created id: " << id << "\n";
-#endif
+// #if LOG_THREADS
+//             start_logger << "        [Thread] Created id: " << id << "\n";
+// #endif
 
-        } else if (waitingTasks < maxNbWaiting) {
-            waitingTasks++;
-            wait(maxWait);
-            waitingTasks--;
+        } else if (sizeWaitingTasks < maxNbWaiting) {
+            sizeWaitingTasks++;
+            wait(waitingTask);
+            sizeWaitingTasks--;
             taskQueue.push(std::move(runnable));
         } else {
             monitorOut();
@@ -316,10 +316,10 @@ public:
         }
 
 
-#if LOG
-        logger() << start_logger.str();
-        start_logger.flush();
-#endif
+// #if LOG
+//         logger() << start_logger.str();
+//         start_logger.flush();
+// #endif
 
         monitorOut();
         return true;
