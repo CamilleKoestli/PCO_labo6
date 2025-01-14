@@ -23,7 +23,7 @@ Voici les classes principales, les sous-classes en fonction de leur rôle :
 
 - `Runnable` : Définit une interface pour les tâches à exécuter.
 - `ThreadPool` : Gère la création, la suppression, et l'exécution des threads.
-- `Worker` : Structure représentant chaque thread, incluant son état et ses conditions de synchronisation. Lrsqu'une tâche est disponible, la condition associée au `Worker` est signalée, permettant au thread de récupérer la tâche. Après l'exécution d'une tâche, `isWorking` est remis à `false` et `previousTaskEnd` est mis à jour. Le thread master utilise `previousTaskEnd` pour supprimer les threads inactifs qui dépassent `idleTimeout`.
+- `Worker` : Structure représentant chaque thread, incluant son état et ses conditions de synchronisation. Lorsqu'une tâche est disponible, la condition associée au `Worker` est signalée, permettant au thread de récupérer la tâche. Après l'exécution d'une tâche, `isWorking` est remis à `false` et `previousTaskEnd` est mis à jour. Le thread master utilise `previousTaskEnd` pour supprimer les threads inactifs qui dépassent `idleTimeout`.
 
 ### Gestion du Threadpool
 
