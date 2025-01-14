@@ -78,7 +78,7 @@ private:
      */
     std::chrono::milliseconds getTime() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch());
+            std::chrono::steady_clock::now().time_since_epoch());
     }
 
 public:
@@ -98,6 +98,7 @@ public:
 
             for (auto it = workers.begin(); it != workers.end();) {
                 auto &worker = it->second;
+                auto tmp = it->first;
 
                 if (!worker.isWorking && (getTime() - worker.previousTaskEnd >= idleTimeout + gracePeriod)) {
                     if (waitingThreads > 0 && !taskQueue.empty()) {
@@ -111,8 +112,10 @@ public:
                     it = workers.erase(it);
 
 #if LOG_THREADS
-                    logger() << "Thread supprimé pour timeout\n";
+                    logger() << "======== [Thread] timedOut: " << tmp << "\n";
+                    logger() << "======== [ThreadPool] size: " << workers.size() << "\n";
 #endif
+
                 } else {
                     ++it;
                 }
@@ -148,6 +151,13 @@ public:
             activeWorkerCount++;
             workers.at(id).isWorking = true;
 
+
+
+#if LOG_THREADS
+            logger() << "======== [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n";
+#endif
+
+
             auto task = std::move(taskQueue.front());
             taskQueue.pop();
 
@@ -173,12 +183,12 @@ public:
      */
     ThreadPool(int maxThreadCount, int maxNbWaiting, std::chrono::milliseconds idleTimeout)
         : maxThreadCount(maxThreadCount),
-          maxNbWaiting(maxNbWaiting),
-          idleTimeout(idleTimeout),
-          ThreadPoolMaster(&ThreadPool::master_work, this),
-          removingTimedOutThread(false),
-          waitingThreads(0),
-          activeWorkerCount(0) {
+        maxNbWaiting(maxNbWaiting),
+        idleTimeout(idleTimeout),
+        ThreadPoolMaster(&ThreadPool::master_work, this),
+        removingTimedOutThread(false),
+        waitingThreads(0),
+        activeWorkerCount(0) {
         if (maxThreadCount < 1 || maxNbWaiting < 1 || idleTimeout.count() < 1) {
             throw std::invalid_argument("Invalid thread pool parameters");
         }
@@ -199,14 +209,14 @@ public:
         ThreadPoolMaster.requestStop();
         ThreadPoolMaster.join();
 
-        for (auto &worker: workers) {
+        for (auto &worker : workers) {
             worker.second.thread->requestStop();
             signal(*worker.second.waiting_t);
         }
 
         monitorOut();
 
-        for (auto &worker: workers) {
+        for (auto &worker : workers) {
             worker.second.thread->join();
         }
 
@@ -244,7 +254,7 @@ public:
         taskQueue.push(std::move(runnable));
 
         if (waitingThreads > 0) {
-            for (auto &worker: workers) {
+            for (auto &worker : workers) {
                 if (!worker.second.isWorking) {
                     signal(*worker.second.waiting_t);
                     break;
@@ -256,11 +266,12 @@ public:
                                         .thread = std::make_unique<PcoThread>(&ThreadPool::thread_work, this, id),
                                         .waiting_t = std::make_unique<Condition>(),
                                         .isWorking = false,
-                                        .previousTaskEnd = getTime()});
+                                        .previousTaskEnd = getTime() });
 
 #if LOG_THREADS
-            logger() << "Thread créé: " << id << "\n";
+            logger() << "======== [Thread] created: " << id << "\n";
 #endif
+
         }
 
         monitorOut();
