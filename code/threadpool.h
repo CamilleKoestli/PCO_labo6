@@ -24,7 +24,7 @@
 #include <time.h>
 #include <vector>
 
-#define LOG 1
+#define LOG 0
 
 #if LOG
 #define LOG_THREADS 1
@@ -62,7 +62,7 @@ private:
      */
     struct Worker {
         std::unique_ptr<PcoThread> thread;        // Thread associé au worker.
-        std::unique_ptr<Condition> waitingT;     // Condition associée au worker.
+        std::unique_ptr<Condition> waitingT;      // Condition associée au worker.
         bool isWorking = false;                   // Indique si le worker est en train de travailler.
         std::chrono::milliseconds previousTaskEnd;// Temps de fin de la dernière tâche.
     };
@@ -72,14 +72,14 @@ private:
     std::chrono::milliseconds idleTimeout;// Temps d'inactivité avant suppression du thread.
 
     PcoThread ThreadPoolMaster;// Thread maître pour la gestion des threads workers.
-    size_t waitingThreads;   // Nombre de threads en attente.
+    size_t waitingThreads;     // Nombre de threads en attente.
 
     std::map<size_t, Worker> workers;               // Map des threads workers.
     std::queue<std::unique_ptr<Runnable>> taskQueue;// File d'attente des tâches.
 
-    Condition waitingTask; // Condition signalant que la file d'attente est pleine.
+    Condition waitingTask;// Condition signalant que la file d'attente est pleine.
 
-    size_t sizeWaitingTasks = 0; // Nombre de tâches en attente.
+    size_t sizeWaitingTasks = 0;// Nombre de tâches en attente.
 
     /**
      * @brief Retourne l'heure actuelle en millisecondes.
@@ -97,9 +97,9 @@ public:
      */
     void master_work() {
 
-// #if LOG
-//         std::stringstream master_work_logger;
-// #endif
+#if LOG
+        std::stringstream master_work_logger;
+#endif
 
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
@@ -109,7 +109,9 @@ public:
 
             for (auto it = workers.begin(); it != workers.end();) {
                 auto &worker = it->second;
+#if LOG_THREADS
                 auto tmp = it->first;
+#endif
 
                 if (!worker.isWorking && (getTime() - worker.previousTaskEnd >= idleTimeout + gracePeriod)) {
                     if (waitingThreads > 0 && !taskQueue.empty()) {
@@ -122,22 +124,22 @@ public:
                     worker.thread->join();
                     it = workers.erase(it);
 
-// #if LOG_THREADS
-//                     master_work_logger
-//                             << "===== [master_work]\n"
-//                             << "         [Thread] TimedOut: " << tmp << "\n"
-//                             << "         [ThreadPool] Size: " << workers.size() << "\n";
-// #endif
+#if LOG_THREADS
+                    master_work_logger
+                            << "===== [master_work]\n"
+                            << "         [Thread] TimedOut: " << tmp << "\n"
+                            << "         [ThreadPool] Size: " << workers.size() << "\n";
+#endif
 
                 } else {
                     ++it;
                 }
             }
 
-// #if LOG
-//             logger() << master_work_logger.str();
-//             master_work_logger.flush();
-// #endif
+#if LOG
+            logger() << master_work_logger.str();
+            master_work_logger.flush();
+#endif
 
             monitorOut();
 
@@ -152,9 +154,9 @@ public:
      */
     void thread_work(size_t id) {
 
-// #if LOG
-//         std::stringstream thread_work_logger;
-// #endif
+#if LOG
+        std::stringstream thread_work_logger;
+#endif
 
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
@@ -172,20 +174,20 @@ public:
 
             workers.at(id).isWorking = true;
 
-// #if LOG_TASKS
-//             thread_work_logger
-//                     << "===== [thread_work]\n"
-//                     << "         [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n"
-//                     << "         [TaskQueue] Size: " << taskQueue.size() << "\n";
-// #endif
+#if LOG_TASKS
+            thread_work_logger
+                    << "===== [thread_work]\n"
+                    << "         [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n"
+                    << "         [TaskQueue] Size: " << taskQueue.size() << "\n";
+#endif
 
             auto task = std::move(taskQueue.front());
             taskQueue.pop();
 
-// #if LOG
-//             logger() << thread_work_logger.str();
-//             thread_work_logger.flush();
-// #endif
+#if LOG
+            logger() << thread_work_logger.str();
+            thread_work_logger.flush();
+#endif
 
             monitorOut();
 
@@ -227,9 +229,9 @@ public:
      */
     ~ThreadPool() {
 
-// #if LOG
-//         logger() << "===== [~ThreadPool] Called\n";
-// #endif
+#if LOG
+        logger() << "===== [~ThreadPool] Called\n";
+#endif
 
         monitorIn();
 
@@ -260,18 +262,18 @@ public:
      */
     bool start(std::unique_ptr<Runnable> runnable) {
 
-// #if LOG
-//         std::stringstream start_logger;
-// #endif
+#if LOG
+        std::stringstream start_logger;
+#endif
 
         monitorIn();
 
-// #if LOG_TASKS
-//         start_logger
-//                 << "===== [start]\n"
-//                 << "        [Task] New: " << runnable->id() << "\n"
-//                 << "        [TaskQueue] Size: " << taskQueue.size() << "\n";
-// #endif
+#if LOG_TASKS
+        start_logger
+                << "===== [start]\n"
+                << "        [Task] New: " << runnable->id() << "\n"
+                << "        [TaskQueue] Size: " << taskQueue.size() << "\n";
+#endif
 
         if (waitingThreads > 0) {
             taskQueue.push(std::move(runnable));
@@ -293,9 +295,9 @@ public:
                                         .isWorking = false,
                                         .previousTaskEnd = getTime()});
 
-// #if LOG_THREADS
-//             start_logger << "        [Thread] Created id: " << id << "\n";
-// #endif
+#if LOG_THREADS
+            start_logger << "        [Thread] Created id: " << id << "\n";
+#endif
 
         } else if (sizeWaitingTasks < maxNbWaiting) {
             sizeWaitingTasks++;
@@ -309,10 +311,10 @@ public:
         }
 
 
-// #if LOG
-//         logger() << start_logger.str();
-//         start_logger.flush();
-// #endif
+#if LOG
+        logger() << start_logger.str();
+        start_logger.flush();
+#endif
 
         monitorOut();
         return true;
