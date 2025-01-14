@@ -1,6 +1,23 @@
-# Thread pool
+# Laboratoire 06 : Thread Pool
 
 Auteurs: Alex Berberat et Camille Koestli
+
+## Table des matières <!-- omit in toc -->
+- [Description des fonctionnalités du logiciel](#description-des-fonctionnalités-du-logiciel)
+- [Choix d'implémentation](#choix-dimplémentation)
+  - [Structure](#structure)
+  - [Gestion du Threadpool](#gestion-du-threadpool)
+  - [Synchronisation](#synchronisation)
+  - [Suppression des threads](#suppression-des-threads)
+  - [Arrêt du thread pool](#arrêt-du-thread-pool)
+- [Tests effectués](#tests-effectués)
+  - [Test 1 : Fonctionnement de base](#test-1--fonctionnement-de-base)
+  - [Test 2 : Gestion d'une surcharge de file](#test-2--gestion-dune-surcharge-de-file)
+  - [Test 3 : Exécution par lot de 10x10 tâches](#test-3--exécution-par-lot-de-10x10-tâches)
+  - [Test 4 : Gestion des tâches refusées](#test-4--gestion-des-tâches-refusées)
+  - [Test 5 : Timeout des threads inactifs](#test-5--timeout-des-threads-inactifs)
+- [Conclusion](#conclusion)
+
 
 ## Description des fonctionnalités du logiciel
 
@@ -21,7 +38,7 @@ Le laboratoire implémente un thread pool qui permet de gérer un ensemble de th
 L'implémentation de notre code utilise un système de thread pool dynamique, c'est-à-dire que les threads sont créés ou détruits en fonction de la charge de travail. Nous avons choisi de faire une implémentation sur le modèle avec un master thread qui gère les threads actifs et des threads qui exécutent les tâches récupérées dans la file d'attente.
 Voici les classes principales, les sous-classes en fonction de leur rôle :
 
-- `Runnable` : Définit une interface pour les tâches à exécuter.
+- `Runnable` : Définis une interface pour les tâches à exécuter.
 - `ThreadPool` : Gère la création, la suppression, et l'exécution des threads.
 - `Worker` : Structure représentant chaque thread, incluant son état et ses conditions de synchronisation. Lorsqu'une tâche est disponible, la condition associée au `Worker` est signalée, permettant au thread de récupérer la tâche. Après l'exécution d'une tâche, `isWorking` est remis à `false` et `previousTaskEnd` est mis à jour. Le thread master utilise `previousTaskEnd` pour supprimer les threads inactifs qui dépassent `idleTimeout`.
 
@@ -36,12 +53,13 @@ Le thread pool est géré par la classe `ThreadPool`. Cette classe est responsab
 ### Synchronisation
 
 - `taskQueue` : File d'attente des tâches.
-- `workers` : Carte contenant l'état de chaque thread.
+- `workers` : Une map de `Worker` contenant l'état de chaque thread.
 - Variable partagée comme `waitingThreads` .
+- `waitingTask` : Une Condition d'attente pour les nouvelles tâches.
 
 ### Suppression des threads
 
-Pour éviter les threads inutile, le master vérifie l'activité des threads. Les threads inactifs, après un certain temps `idleTimeout` sont supprimés, sauf si des tâches sont en attente.
+Pour éviter les threads inutiles, le master vérifie l'activité des threads. Les threads inactifs, après un certain temps `idleTimeout` sont supprimés, sauf si des tâches sont en attente.
 
 ### Arrêt du thread pool
 
@@ -62,7 +80,7 @@ Le thread pool utilise un destructeur `~ThreadPool` pour effectuer un arrêt. Ce
 | Test 4 | Gestion des tâches refusées            | OK       |
 | Test 5 | Timeout des threads inactifs           | OK       |
 
-### Test 1 : Fonctionnement de base de base
+### Test 1 : Fonctionnement de base 
 
 L'objectif est la vérification de l'exécution correcte des tâches pour des tailles de pool variées. Il va vérifier que le thread pool peut gérer 10 threads pour exécuter 10 tâches simples de manière simultanée.
 
@@ -72,12 +90,19 @@ L'objectif est de vérifier que le pool de threads gère correctement les tâche
 
 ### Test 3 : Exécution par lot de 10x10 tâches
 
-L'objectif est de de valider l'exécution par lots successifs. Il vérifie que le thread pool peut exécuter 10 lots de 10 tâches séquentiellement.
+L'objectif est de valider l'exécution par lots successifs. Il vérifie que le thread pool peut exécuter 10 lots de 10 tâches séquentiellement.
 
 ### Test 4 : Gestion des tâches refusées
 
-L'objectif de ce test est de ester le comportement avec une file pleine. Ca simule une situation où 30 tâches sont soumises simultanément à un pool limité à 10 threads avec une file d'attente de 5 tâches maximum.
+L'objectif de ce test est de tester le comportement avec une file pleine. En simulant une situation où 30 tâches sont soumises simultanément à un pool limité à 10 threads avec une file d'attente de 5 tâches maximum.
 
 ### Test 5 : Timeout des threads inactifs
 
 L'objectif est de vérifier que les threads inactifs sont supprimés après un certain temps d'inactivité `idleTimeout`.
+
+
+## Conclusion 
+Ce laboratoire a permis de constater l'efficacité d'un ThreadPool pour gérer des tâches concurrentes. 
+Il nous a aussi donné la possibilité d'expérimenter avec la gestion dynamique de la taille du ThreadPool afin d'optimiser la consommation des ressources CPU et mémoire.
+L'utilisation de moniteur de Hoare comme demandé dans les exigences de laboratoire à inciter à utiliser un Thread maitre afin de pouvoir gérer la gestion dynamique du ThreadPool.
+Les tests ont démontré que l'implémentation est conforme aux exigences fonctionnelles et offre une solution adaptable à des cas d'utilisation plus variable et complexe.
