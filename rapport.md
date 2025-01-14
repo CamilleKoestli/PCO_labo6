@@ -64,7 +64,7 @@ Le thread pool utilise un destructeur `~ThreadPool` pour effectuer un arrêt. Ce
 
 ### Test 1 : Fonctionnement de base de base
 
-L'objectif est la vérification de l'exécution correcte des tâches pour des tailles de pool variées.
+L'objectif est la vérification de l'exécution correcte des tâches pour des tailles de pool variées. Il va vérifier que le thread pool peut gérer 10 threads pour exécuter 10 tâches simples de manière simultanée.
 
 ### Test 2 : Gestion d'une surcharge de file
 
@@ -72,12 +72,12 @@ L'objectif est de vérifier que le pool de threads gère correctement les tâche
 
 ### Test 3 : Exécution par lot de 10x10 tâches
 
-L'objectif est de de valider l'exécution par lots successifs.
+L'objectif est de de valider l'exécution par lots successifs. Il vérifie que le thread pool peut exécuter 10 lots de 10 tâches séquentiellement.
 
 ### Test 4 : Gestion des tâches refusées
 
-L'objectif de ce test est de ester le comportement avec une file pleine.
+L'objectif de ce test est de ester le comportement avec une file pleine. Ca simule une situation où 30 tâches sont soumises simultanément à un pool limité à 10 threads avec une file d'attente de 5 tâches maximum.
 
 ### Test 5 : Timeout des threads inactifs
 
-L'objectif est de vérifier que les threads inactifs sont supprimés après un certain temps.
+L'objectif est de vérifier que les threads inactifs sont supprimés après un certain temps d'inactivité `idleTimeout`. 
