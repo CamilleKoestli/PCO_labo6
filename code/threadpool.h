@@ -72,13 +72,11 @@ private:
     std::chrono::milliseconds idleTimeout;// Temps d'inactivité avant suppression du thread.
 
     PcoThread ThreadPoolMaster;// Thread maître pour la gestion des threads workers.
-    std::atomic<size_t> waitingThreads;   // Nombre de threads en attente.
-    std::atomic<size_t> activeWorkerCount;// Nombre de threads actifs.
+    size_t waitingThreads;   // Nombre de threads en attente.
 
     std::map<size_t, Worker> workers;               // Map des threads workers.
     std::queue<std::unique_ptr<Runnable>> taskQueue;// File d'attente des tâches.
 
-    Condition removalFinished;// Condition signalant la fin de la suppression des threads.
     Condition waitingTask; // Condition signalant que la file d'attente est pleine.
 
     size_t sizeWaitingTasks = 0; // Nombre de tâches en attente.
@@ -141,8 +139,6 @@ public:
 //             master_work_logger.flush();
 // #endif
 
-            signal(removalFinished);
-
             monitorOut();
 
             PcoThread::usleep(sleepTime.count());
@@ -156,9 +152,9 @@ public:
      */
     void thread_work(size_t id) {
 
-#if LOG
-        std::stringstream thread_work_logger;
-#endif
+// #if LOG
+//         std::stringstream thread_work_logger;
+// #endif
 
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
@@ -174,7 +170,6 @@ public:
                 return;
             }
 
-            activeWorkerCount++;
             workers.at(id).isWorking = true;
 
 // #if LOG_TASKS
@@ -186,7 +181,6 @@ public:
 
             auto task = std::move(taskQueue.front());
             taskQueue.pop();
-
 
 // #if LOG
 //             logger() << thread_work_logger.str();
@@ -200,7 +194,6 @@ public:
             monitorIn();
             workers.at(id).previousTaskEnd = getTime();
             workers.at(id).isWorking = false;
-            activeWorkerCount--;
 
             if (sizeWaitingTasks > 0) {
                 signal(waitingTask);
@@ -222,8 +215,7 @@ public:
           maxNbWaiting(maxNbWaiting),
           idleTimeout(idleTimeout),
           ThreadPoolMaster(&ThreadPool::master_work, this),
-          waitingThreads(0),
-          activeWorkerCount(0) {
+          waitingThreads(0) {
         if (maxThreadCount < 1 || maxNbWaiting < 1 || idleTimeout.count() < 1) {
             throw std::invalid_argument("Invalid thread pool parameters");
         }
@@ -234,6 +226,7 @@ public:
      * Termine proprement tous les threads et vide la file d'attente.
      */
     ~ThreadPool() {
+
 // #if LOG
 //         logger() << "===== [~ThreadPool] Called\n";
 // #endif
