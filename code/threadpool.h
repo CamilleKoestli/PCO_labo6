@@ -18,7 +18,12 @@
 #include <time.h>
 #include <vector>
 
+#define LOG 0
+
+#if LOG
 #define LOG_THREADS 1
+#define LOG_TASKS 1
+#endif
 
 class Runnable {
 public:
@@ -88,10 +93,15 @@ public:
      * Gère la suppression des threads inactifs.
      */
     void master_work() {
+
+#if LOG
+        std::stringstream master_work_logger;
+#endif
+
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
 
-            removingTimedOutThread = true;
+            //  removingTimedOutThread = true;
 
             std::chrono::milliseconds sleepTime(idleTimeout);
             const std::chrono::milliseconds gracePeriod(10);
@@ -112,8 +122,10 @@ public:
                     it = workers.erase(it);
 
 #if LOG_THREADS
-                    logger() << "======== [Thread] timedOut: " << tmp << "\n";
-                    logger() << "======== [ThreadPool] size: " << workers.size() << "\n";
+                    master_work_logger
+                        << "===== [master_work]\n"
+                        << "         [Thread] TimedOut: " << tmp << "\n"
+                        << "         [ThreadPool] Size: " << workers.size() << "\n";
 #endif
 
                 } else {
@@ -121,7 +133,12 @@ public:
                 }
             }
 
-            removingTimedOutThread = false;
+#if LOG
+            logger() << master_work_logger.str();
+            master_work_logger.flush();
+#endif
+
+            //    removingTimedOutThread = false;
             signal(removal_finished);
 
             monitorOut();
@@ -136,6 +153,11 @@ public:
      * @param id Identifiant du worker.
      */
     void thread_work(size_t id) {
+
+#if LOG
+        std::stringstream thread_work_logger;
+#endif
+
         while (!PcoThread::thisThread()->stopRequested()) {
             monitorIn();
 
@@ -153,13 +175,23 @@ public:
 
 
 
-#if LOG_THREADS
-            logger() << "======== [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n";
+#if LOG_TASKS
+            thread_work_logger
+                << "===== [thread_work]\n"
+                << "         [Task] Thread: " << id << " -> " << taskQueue.front()->id() << "\n"
+                << "         [TaskQueue] Size: " << taskQueue.size() << "\n";
 #endif
 
 
             auto task = std::move(taskQueue.front());
             taskQueue.pop();
+
+
+#if LOG
+            logger() << thread_work_logger.str();
+            thread_work_logger.flush();
+#endif
+
 
             monitorOut();
 
@@ -171,6 +203,9 @@ public:
             activeWorkerCount--;
             monitorOut();
         }
+
+
+
     }
 
 public:
@@ -200,11 +235,13 @@ public:
      */
     ~ThreadPool() {
 
+        logger() << "===== [~ThreadPool] Called\n";
+
+        removingTimedOutThread = true;
+
         monitorIn();
 
-        if (removingTimedOutThread) {
-            wait(removal_finished);
-        }
+
 
         ThreadPoolMaster.requestStop();
         ThreadPoolMaster.join();
@@ -243,15 +280,27 @@ public:
      * @return `true` si la tâche a été ajoutée avec succès, `false` sinon.
      */
     bool start(std::unique_ptr<Runnable> runnable) {
+
+#if LOG
+        std::stringstream start_logger;
+#endif
+
         monitorIn();
 
-        if (taskQueue.size() >= maxNbWaiting) {
+        if (taskQueue.size() >= maxNbWaiting || removingTimedOutThread) {
             monitorOut();
             runnable->cancelRun();
             return false;
         }
 
         taskQueue.push(std::move(runnable));
+
+#if LOG_TASKS
+        start_logger
+            << "===== [start]\n"
+            << "        [Task] New: " << taskQueue.front()->id() << "\n"
+            << "        [TaskQueue] Size: " << taskQueue.size() << "\n";
+#endif
 
         if (waitingThreads > 0) {
             for (auto &worker : workers) {
@@ -269,10 +318,17 @@ public:
                                         .previousTaskEnd = getTime() });
 
 #if LOG_THREADS
-            logger() << "======== [Thread] created: " << id << "\n";
+            start_logger << "        [Thread] Created id: " << id << "\n";
 #endif
 
         }
+
+
+
+#if LOG
+        logger() << start_logger.str();
+        start_logger.flush();
+#endif
 
         monitorOut();
         return true;
