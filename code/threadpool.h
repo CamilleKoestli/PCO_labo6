@@ -18,7 +18,7 @@
 #include <time.h>
 #include <vector>
 
-#define LOG 0
+#define LOG 1
 
 #if LOG
 #define LOG_THREADS 1
@@ -67,7 +67,7 @@ private:
 
     // Gestion des threads et des tâches
     PcoThread ThreadPoolMaster;              // Thread maître pour la gestion des threads workers.
-    std::atomic<bool> removingTimedOutThread;// Indique si des threads sont en cours de suppression.
+    // std::atomic<bool> removingTimedOutThread;// Indique si des threads sont en cours de suppression.
     std::atomic<size_t> waitingThreads;      // Nombre de threads en attente.
     std::atomic<size_t> activeWorkerCount;   // Nombre de threads actifs.
 
@@ -231,7 +231,7 @@ public:
         maxNbWaiting(maxNbWaiting),
         idleTimeout(idleTimeout),
         ThreadPoolMaster(&ThreadPool::master_work, this),
-        removingTimedOutThread(false),
+        /*removingTimedOutThread(false),*/
         waitingThreads(0),
         activeWorkerCount(0) {
         if (maxThreadCount < 1 || maxNbWaiting < 1 || idleTimeout.count() < 1) {
@@ -244,10 +244,11 @@ public:
      * Termine proprement tous les threads et vide la file d'attente.
      */
     ~ThreadPool() {
-
+#if LOG
         logger() << "===== [~ThreadPool] Called\n";
+#endif
 
-        removingTimedOutThread = true;
+
 
         monitorIn();
 
@@ -297,19 +298,11 @@ public:
 
         monitorIn();
 
-        /*if (taskQueue.size() >= maxNbWaiting || removingTimedOutThread) {
-            monitorOut();
-            runnable->cancelRun();
-            return false;
-        }*/
-
-
-
 
 #if LOG_TASKS
         start_logger
             << "===== [start]\n"
-            << "        [Task] New: " << taskQueue.front()->id() << "\n"
+            << "        [Task] New: " << runnable->id() << "\n"
             << "        [TaskQueue] Size: " << taskQueue.size() << "\n";
 #endif
 
